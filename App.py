@@ -154,22 +154,22 @@ with tab1:
         return f"""
         <div style="margin-bottom: 20px; font-family: sans-serif;">
             <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                <strong style="color:#334155; font-size:14px;">{label}</strong>
+                <strong style="color:#e2e8f0; font-size:14px;">{label}</strong>
                 {badge}
             </div>
             
             <!-- Barra Soja -->
             <div style="display:flex; align-items:center; margin-bottom:4px;">
-                <div style="width:50px; font-size:12px; color:#15803d; font-weight:bold; text-align:right; margin-right:10px;">{soja_val}%</div>
-                <div style="flex:1; background:#f1f5f9; border-radius:10px; height:12px;">
+                <div style="width:50px; font-size:12px; color:#4ade80; font-weight:bold; text-align:right; margin-right:10px;">{soja_val}%</div>
+                <div style="flex:1; background:#334155; border-radius:10px; height:12px;">
                     <div style="width:{soja_pct}%; background:#10b981; height:10px; border-radius:10px;"></div>
                 </div>
             </div>
             
             <!-- Barra DDGS -->
             <div style="display:flex; align-items:center;">
-                <div style="width:50px; font-size:12px; color:#b45309; font-weight:bold; text-align:right; margin-right:10px;">{ddgs_val}%</div>
-                <div style="flex:1; background:#f1f5f9; border-radius:10px; height:12px;">
+                <div style="width:50px; font-size:12px; color:#fbbf24; font-weight:bold; text-align:right; margin-right:10px;">{ddgs_val}%</div>
+                <div style="flex:1; background:#334155; border-radius:10px; height:12px;">
                     <div style="width:{ddgs_pct}%; background:#f59e0b; height:10px; border-radius:10px;"></div>
                 </div>
             </div>
