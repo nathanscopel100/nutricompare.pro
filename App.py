@@ -8,7 +8,7 @@ st.set_page_config(page_title="Nutre Compare Pro", layout="wide", page_icon="�
 # LINKS DA SUA PLANILHA (COLE AQUI)
 # ==========================================
 URL_ABA_GERAL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTUFXCmvEtY4bwfoaz3ux21qc41BAfNT1K2QRysfW6qZ2xaAJOsmXEFmzw2ZWH1KeBy1yfsqtpETrtt/pub?output=csv"
-# Substitua o "SEU_GID_AQUI" pelo número que aparece no final do link da sua aba de Aminoácidos:
+# ATENÇÃO: Substitua o "SEU_GID_AQUI" pelo número que aparece no final do link da sua aba de Aminoácidos:
 URL_ABA_AMINOACIDOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTUFXCmvEtY4bwfoaz3ux21qc41BAfNT1K2QRysfW6qZ2xaAJOsmXEFmzw2ZWH1KeBy1yfsqtpETrtt/pub?output=csv"
 
 @st.cache_data(ttl=60)
@@ -168,22 +168,26 @@ try:
             st.markdown("**Matéria Seca (%)**")
             st.markdown(render_bar(ms_soja, ms_ddgs, 100), unsafe_allow_html=True)
 
-        # Se a aba de Aminoácidos existir e for carregada com sucesso
+        # Bloco INTELIGENTE de leitura de Aminoácidos
         if not df_amino.empty:
             st.markdown("---")
             st.subheader("Perfil de Aminoácidos")
             
-            # Função para puxar aminoácidos com segurança
-            def get_amino(param_name):
+            def get_amino(palavra_chave):
                 try:
-                    v_soja = clean_number(df_amino.loc[df_amino['Elemento Específico'] == param_name, 'Farelo de Soja'].values[0])
-                    v_ddgs = clean_number(df_amino.loc[df_amino['Elemento Específico'] == param_name, 'DDGS de Milho'].values[0])
+                    # Pega as colunas pela posição, ignorando se o nome foi digitado diferente na planilha
+                    col_param = df_amino.columns[0]
+                    col_soja_am = df_amino.columns[1]
+                    col_ddgs_am = df_amino.columns[2]
+                    
+                    v_soja = clean_number(df_amino.loc[df_amino[col_param].str.contains(palavra_chave, case=False, na=False), col_soja_am].values[0])
+                    v_ddgs = clean_number(df_amino.loc[df_amino[col_param].str.contains(palavra_chave, case=False, na=False), col_ddgs_am].values[0])
                     return v_soja, v_ddgs
                 except:
                     return 0.0, 0.0
             
-            lisina_soja, lisina_ddgs = get_amino('Lisina (% na MS)')
-            metionina_soja, metionina_ddgs = get_amino('Metionina (% na MS)')
+            lisina_soja, lisina_ddgs = get_amino('Lisina')
+            metionina_soja, metionina_ddgs = get_amino('Metionina')
             
             col_amino1, col_amino2 = st.columns(2)
             with col_amino1:
