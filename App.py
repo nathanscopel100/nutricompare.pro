@@ -9,7 +9,7 @@ st.set_page_config(page_title="Nutre Compare Pro", layout="wide", page_icon="�
 @st.cache_data(ttl=60)
 def load_data():
     # URL de exportação CSV da sua aba "Comparativo Geral"
-    url_geral = "https://docs.google.com/spreadsheets/d/17Aa0wv-LxqQwx9gicdBM8ygbrBOBIF-cQny8eRkYKVE/export?format=csv&gid=0"
+    url_geral = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTUFXCmvEtY4bwfoaz3ux21qc41BAfNT1K2QRysfW6qZ2xaAJOsmXEFmzw2ZWH1KeBy1yfsqtpETrtt/pub?output=csv"
     df = pd.read_csv(url_geral)
     return df
 
