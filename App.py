@@ -108,24 +108,38 @@ try:
     
     with tab1:
         st.subheader(f"Análise Econômica - Praça: {praca} | Formato: {embalagem}")
-        col1, col2, col3 = st.columns(3)
+        
+        # Agora dividimos em 4 colunas para incluir o Preço Limite
+        col1, col2, col3, col4 = st.columns(4)
         
         custo_pb_soja = preco_soja / (pb_soja * 10) if pb_soja > 0 else 0
         custo_pb_ddgs = preco_ddgs / (pb_ddgs * 10) if pb_ddgs > 0 else 0
         
+        # 1. Custo Soja
         col1.metric("Custo por kg de PB (Soja)", f"R$ {custo_pb_soja:.2f}")
         with col1.expander("ℹ️ Como essa conta é feita?"):
             st.write(f"Preço (R$ {preco_soja}) dividido pelos kg de Proteína em 1 tonelada ({pb_soja} * 10 = {pb_soja*10} kg).")
 
+        # 2. Custo DDGS
         col2.metric("Custo por kg de PB (DDGS)", f"R$ {custo_pb_ddgs:.2f}", 
                     delta=f"{((custo_pb_ddgs/custo_pb_soja)-1)*100:.1f}% vs Soja", delta_color="inverse")
         with col2.expander("ℹ️ Como essa conta é feita?"):
             st.write(f"Preço (R$ {preco_ddgs}) dividido pelos kg de Proteína em 1 tonelada ({pb_ddgs} * 10 = {pb_ddgs*10} kg).")
 
+        # 3. NOVO: PREÇO LIMITE (TETO) DO DDGS
+        preco_limite_ddgs = preco_soja * (pb_ddgs / pb_soja) if pb_soja > 0 else 0
+        diferenca_teto = preco_limite_ddgs - preco_ddgs
+        status_teto = f"🟢 Vantagem de R$ {diferenca_teto:.2f}" if preco_ddgs <= preco_limite_ddgs else f"🔴 Passou R$ {abs(diferenca_teto):.2f}"
+        
+        col3.metric("Preço Limite (Teto DDGS)", f"R$ {preco_limite_ddgs:.2f}", status_teto, delta_color="normal" if preco_ddgs <= preco_limite_ddgs else "inverse")
+        with col3.expander("ℹ️ Como essa conta é feita?"):
+            st.write(f"É o preço máximo a se pagar pelo DDGS com base na proteína. \nConta: Preço Soja (R${preco_soja}) x [Proteína DDGS ({pb_ddgs}%) / Proteína Soja ({pb_soja}%)].")
+
+        # 4. Relação de Preço e Regra de Ouro
         viabilidade = preco_ddgs / preco_soja
-        status_viabilidade = "🟢 Favorável para DDGS" if viabilidade < 0.75 else ("🟡 Atenção (Equilíbrio)" if viabilidade < 0.82 else "🔴 Desfavorável para DDGS")
-        col3.metric("Relação de Preço (DDGS/Soja)", f"{viabilidade*100:.1f}%", status_viabilidade)
-        with col3.expander("ℹ️ Regra de Ouro"):
+        status_viabilidade = "🟢 Favorável" if viabilidade < 0.75 else ("🟡 Atenção" if viabilidade < 0.82 else "🔴 Desfavorável")
+        col4.metric("Relação (DDGS/Soja)", f"{viabilidade*100:.1f}%", status_viabilidade)
+        with col4.expander("ℹ️ Regra de Ouro"):
             st.write("Se o preço do DDGS for até 75%-80% do preço da Soja, ele é financeiramente vantajoso na dieta.")
 
         st.markdown("---")
