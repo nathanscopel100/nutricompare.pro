@@ -1,266 +1,348 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 # Configuração da Página
-st.set_page_config(page_title="Nutre Compare Pro", layout="wide", page_icon="🌾")
+st.set_page_config(page_title="Nutre Compare Pro v2", layout="wide", page_icon="🌾")
 
 # ==========================================
-# LINKS DA SUA PLANILHA (COLE AQUI)
+# GESTÃO DE DADOS (SIMULANDO A NOVA GOOGLE SHEET)
 # ==========================================
-URL_ABA_GERAL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTUFXCmvEtY4bwfoaz3ux21qc41BAfNT1K2QRysfW6qZ2xaAJOsmXEFmzw2ZWH1KeBy1yfsqtpETrtt/pub?output=csv"
-# ATENÇÃO: Substitua o "SEU_GID_AQUI" pelo número que aparece no final do link da sua aba de Aminoácidos:
-URL_ABA_AMINOACIDOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTUFXCmvEtY4bwfoaz3ux21qc41BAfNT1K2QRysfW6qZ2xaAJOsmXEFmzw2ZWH1KeBy1yfsqtpETrtt/pub?output=csv"
-
+# Para conectar sua planilha real futuramente, basta usar pd.read_csv(URL)
+# Aqui, criamos uma base "mock" auditável, com dados zootécnicos reais de literatura (Rostagno et al., NRC)
 @st.cache_data(ttl=60)
 def load_data():
-    # Carrega a aba principal
-    df_geral = pd.read_csv(URL_ABA_GERAL)
-    
-    # Tenta carregar a aba de aminoácidos (se não achar, não trava o sistema)
-    try:
-        df_amino = pd.read_csv(URL_ABA_AMINOACIDOS)
-    except:
-        df_amino = pd.DataFrame()
-        
-    return df_geral, df_amino
+    data = {
+        'Parâmetro Nutricional': ['Proteína Bruta (PB)', 'Matéria Seca (MS)', 'Extrato Etéreo (EE)', 'FDN', 'Fibra Bruta (FB)', 'NDT (Energia)', 'Energia Metabolizável - Aves', 'Energia Metabolizável - Suínos', 'Cálcio (Ca)', 'Fósforo Total (P)'],
+        'Unidade': ['%', '%', '%', '%', '%', '%', 'Mcal/kg', 'Mcal/kg', '%', '%'],
+        'Farelo de Soja': [46.0, 89.0, 1.5, 14.0, 6.0, 81.0, 2.23, 3.20, 0.25, 0.60],
+        'DDGS': [30.0, 89.0, 8.0, 35.0, 8.0, 84.0, 2.70, 3.30, 0.05, 0.85],
+        'Milho': [8.0, 88.0, 3.5, 12.0, 2.0, 88.0, 3.38, 3.40, 0.03, 0.28],
+        'Sorgo': [9.0, 88.0, 2.8, 15.0, 2.5, 83.0, 3.25, 3.30, 0.03, 0.28],
+        'Farelo de Algodão': [38.0, 89.0, 1.5, 28.0, 14.0, 65.0, 1.80, 2.40, 0.20, 1.00],
+        'Caroço de Algodão': [23.0, 90.0, 18.0, 44.0, 24.0, 95.0, np.nan, np.nan, 0.15, 0.60] # nan simula N/D
+    }
+    df = pd.DataFrame(data)
+    return df
 
+# ==========================================
+# FUNÇÕES CORE & MATEMÁTICA
+# ==========================================
 def clean_number(val):
-    if pd.isna(val): return 0.0
-    val_str = str(val).replace('Mcal/kg', '').replace(',', '.').strip()
-    try: return float(val_str)
-    except: return 0.0
+    if pd.isna(val) or val == '' or val == 'N/D': return np.nan
+    try: return float(str(val).replace(',', '.').strip())
+    except: return np.nan
 
-# Geração das barras visuais (SEM ESPAÇOS NO INÍCIO DO HTML)
-def render_bar(val_soja, val_ddgs, max_val):
-    pct_soja = min((val_soja / max_val) * 100, 100) if max_val > 0 else 0
-    pct_ddgs = min((val_ddgs / max_val) * 100, 100) if max_val > 0 else 0
-    
-    html = f"""<div style="margin-bottom: 15px;">
-<div style="display:flex; align-items:center; margin-bottom:4px;">
-<div style="width:50px; font-size:14px; color:#4ade80; font-weight:bold;">Soja</div>
-<div style="flex:1; background:#334155; border-radius:10px; height:18px; overflow:hidden; margin-right: 10px;">
-<div style="width:{pct_soja}%; background:#10b981; height:100%;"></div>
-</div>
-<div style="width:40px; font-size:14px; text-align:right;">{val_soja}</div>
-</div>
-<div style="display:flex; align-items:center;">
-<div style="width:50px; font-size:14px; color:#fbbf24; font-weight:bold;">DDGS</div>
-<div style="flex:1; background:#334155; border-radius:10px; height:18px; overflow:hidden; margin-right: 10px;">
-<div style="width:{pct_ddgs}%; background:#f59e0b; height:100%;"></div>
-</div>
-<div style="width:40px; font-size:14px; text-align:right;">{val_ddgs}</div>
-</div>
-</div>"""
+def get_nutrient(df, commodity, param):
+    try:
+        val = df.loc[df['Parâmetro Nutricional'] == param, commodity].values[0]
+        return clean_number(val)
+    except:
+        return np.nan
+
+def get_unit(df, param):
+    try: return df.loc[df['Parâmetro Nutricional'] == param, 'Unidade'].values[0]
+    except: return ""
+
+def calc_cost_per_nutrient(price_ton, nutrient_val, unit):
+    if pd.isna(nutrient_val) or nutrient_val == 0: return np.nan, ""
+    if unit == '%':
+        kg_per_ton = nutrient_val * 10
+        return price_ton / kg_per_ton, f"{nutrient_val} * 10 = {kg_per_ton} kg/ton"
+    elif unit == 'Mcal/kg':
+        mcal_per_ton = nutrient_val * 1000
+        return price_ton / mcal_per_ton, f"{nutrient_val} * 1000 = {mcal_per_ton} Mcal/ton"
+    return np.nan, ""
+
+# Paleta de cores dinâmica para as barras HTML
+COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#eab308']
+
+def render_dynamic_bar(commodities_dict, max_val, unit):
+    html = '<div style="margin-bottom: 15px;">'
+    for i, (comm, val) in enumerate(commodities_dict.items()):
+        color = COLORS[i % len(COLORS)]
+        if pd.isna(val):
+            display_val = "N/D"
+            pct = 0
+        else:
+            display_val = f"{val}{unit}"
+            pct = min((val / max_val) * 100, 100) if max_val > 0 else 0
+            
+        html += f"""
+        <div style="display:flex; align-items:center; margin-bottom:4px;">
+            <div style="width:120px; font-size:12px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{comm}">{comm}</div>
+            <div style="flex:1; background:#334155; border-radius:10px; height:18px; overflow:hidden; margin-right: 10px;">
+                <div style="width:{pct}%; background:{color}; height:100%;"></div>
+            </div>
+            <div style="width:50px; font-size:12px; text-align:right;">{display_val}</div>
+        </div>
+        """
+    html += '</div>'
     return html
 
-st.title("🌾 Nutre Compare Pro")
-st.markdown("Plataforma de análise e soluções econômicas: **Farelo de Soja vs. DDGS**")
+# ==========================================
+# INTERFACE PRINCIPAL
+# ==========================================
+st.title("🌾 Nutre Compare Pro v2.0")
+st.markdown("Plataforma Dinâmica de Análise Nutricional, Econômica e Substituição de Ingredientes")
 
-try:
-    df_raw, df_amino = load_data()
-    
-    # Nomes das colunas da planilha principal
-    col_soja = 'Farelo de Soja (46-48%)'
-    col_ddgs = 'DDGS de Milho(inpasa)'
-    
-    # Função segura para puxar os dados principais
-    def get_val(param_name):
-        try:
-            v_soja = clean_number(df_raw.loc[df_raw['Parâmetro Nutricional'] == param_name, col_soja].values[0])
-            v_ddgs = clean_number(df_raw.loc[df_raw['Parâmetro Nutricional'] == param_name, col_ddgs].values[0])
-            return v_soja, v_ddgs
-        except:
-            return 0.0, 0.0
+df_raw = load_data()
+all_commodities = [c for c in df_raw.columns if c not in ['Parâmetro Nutricional', 'Unidade']]
+all_parameters = df_raw['Parâmetro Nutricional'].tolist()
 
-    # Extraindo parâmetros principais
-    pb_soja, pb_ddgs = get_val('Proteína Bruta (PB) %')
-    ee_soja, ee_ddgs = get_val('Extrato Etéreo (EE) %')
-    ms_soja, ms_ddgs = get_val('Matéria Seca (MS) %')
-    fdn_soja, fdn_ddgs = get_val('FDN %')
-    ndt_soja, ndt_ddgs = get_val('NDT (Energia) %')
-    pndr_soja, pndr_ddgs = get_val('PNDR (% da PB)')
-    pdr_soja, pdr_ddgs = get_val('PDR (% da PB)')
-    fb_soja, fb_ddgs = get_val('FB %')
-    p_soja, p_ddgs = get_val('Fósforo Total (P)')
-    ca_soja, ca_ddgs = get_val('Cálcio (Ca)')
-    
-    # --- BARRA LATERAL ---
-    st.sidebar.header("⚙️ Configurações da Análise")
-    especie = st.sidebar.selectbox("Filtro Zootécnico (Espécie)", ["Bovino", "Suínos", "Aves"])
-    praca = st.sidebar.text_input("Praça de Cotação", value="Campinas/SP")
-    embalagem = st.sidebar.selectbox("Formato de Comercialização", ["A Granel", "Ensacado"])
-    
-    st.sidebar.markdown("---")
-    st.sidebar.header("💰 Cotações do Dia (R$/ton)")
-    preco_soja = st.sidebar.number_input(f"Farelo de Soja ({embalagem})", min_value=0.0, value=2200.0, step=50.0)
-    preco_ddgs = st.sidebar.number_input(f"DDGS ({embalagem})", min_value=0.0, value=1400.0, step=50.0)
+# --- BARRA LATERAL ---
+st.sidebar.header("⚙️ Configurações e Cotações")
+praca = st.sidebar.text_input("Praça de Cotação", value="Campinas/SP")
+embalagem = st.sidebar.selectbox("Formato", ["A Granel", "Ensacado"])
 
-    # Filtrar a energia dependendo da espécie selecionada
-    linha_energia = f"Energia Metabolizável - {especie}" if especie != "Bovino" else "Energia Metabolizável - Bovino"
-    try:
-        energia_soja = clean_number(df_raw.loc[df_raw['Parâmetro Nutricional'].str.contains(linha_energia, na=False), col_soja].values[0])
-        energia_ddgs = clean_number(df_raw.loc[df_raw['Parâmetro Nutricional'].str.contains(linha_energia, na=False), col_ddgs].values[0])
-    except:
-        energia_soja, energia_ddgs = 0.0, 0.0
+st.sidebar.markdown("---")
+st.sidebar.header("💰 Cotações do Dia (R$/ton)")
+prices = {}
+for comm in all_commodities:
+    # Valores default para facilitar o teste da ferramenta
+    default_price = 1200.0 if comm == 'Milho' else (2200.0 if comm == 'Farelo de Soja' else (1400.0 if comm == 'DDGS' else 1000.0))
+    prices[comm] = st.sidebar.number_input(f"{comm}", min_value=0.0, value=default_price, step=50.0)
 
-    # --- ABA 1: VIABILIDADE E CUSTO ---
-    tab1, tab2, tab3 = st.tabs(["📊 Custo-Benefício & Nutrição", "⚖️ Simulador de Substituição", "📋 Base de Dados"])
+tab1, tab2, tab3 = st.tabs(["📊 Custo-Benefício & Nutrição", "⚖️ Simulador de Substituição", "📋 Base de Dados"])
+
+# ==========================================
+# ABA 1: CUSTO-BENEFÍCIO & NUTRIÇÃO
+# ==========================================
+with tab1:
+    st.subheader("1. Seleção de Commodities para Análise")
+    selected_comms = st.multiselect(
+        "Selecione os ingredientes que deseja comparar lado a lado:",
+        options=all_commodities,
+        default=['Farelo de Soja', 'DDGS', 'Milho']
+    )
     
-    with tab1:
-        st.subheader(f"Análise Econômica - Praça: {praca} | Formato: {embalagem}")
+    if not selected_comms:
+        st.warning("Selecione pelo menos uma commodity para visualizar os dados.")
+    else:
+        st.markdown("---")
+        st.subheader("2. Análise Econômica por Nutriente")
         
-        # Agora dividimos em 4 colunas para incluir o Preço Limite
-        col1, col2, col3, col4 = st.columns(4)
+        econ_param = st.selectbox("Selecione o parâmetro para análise de custo específico:", ['Proteína Bruta (PB)', 'Fibra Bruta (FB)', 'Energia Metabolizável - Aves', 'Energia Metabolizável - Suínos', 'NDT (Energia)'])
+        econ_unit = get_unit(df_raw, econ_param)
         
-        custo_pb_soja = preco_soja / (pb_soja * 10) if pb_soja > 0 else 0
-        custo_pb_ddgs = preco_ddgs / (pb_ddgs * 10) if pb_ddgs > 0 else 0
-        
-        # 1. Custo Soja
-        col1.metric("Custo por kg de PB (Soja)", f"R$ {custo_pb_soja:.2f}")
-        with col1.expander("ℹ️ Como essa conta é feita?"):
-            st.write(f"Preço (R$ {preco_soja}) dividido pelos kg de Proteína em 1 tonelada ({pb_soja} * 10 = {pb_soja*10} kg).")
-
-        # 2. Custo DDGS
-        col2.metric("Custo por kg de PB (DDGS)", f"R$ {custo_pb_ddgs:.2f}", 
-                    delta=f"{((custo_pb_ddgs/custo_pb_soja)-1)*100:.1f}% vs Soja", delta_color="inverse")
-        with col2.expander("ℹ️ Como essa conta é feita?"):
-            st.write(f"Preço (R$ {preco_ddgs}) dividido pelos kg de Proteína em 1 tonelada ({pb_ddgs} * 10 = {pb_ddgs*10} kg).")
-
-        # 3. NOVO: PREÇO LIMITE (TETO) DO DDGS
-        preco_limite_ddgs = preco_soja * (pb_ddgs / pb_soja) if pb_soja > 0 else 0
-        diferenca_teto = preco_limite_ddgs - preco_ddgs
-        status_teto = f"🟢 Vantagem de R$ {diferenca_teto:.2f}" if preco_ddgs <= preco_limite_ddgs else f"🔴 Passou R$ {abs(diferenca_teto):.2f}"
-        
-        col3.metric("Preço Limite (Teto DDGS)", f"R$ {preco_limite_ddgs:.2f}", status_teto, delta_color="normal" if preco_ddgs <= preco_limite_ddgs else "inverse")
-        with col3.expander("ℹ️ Como essa conta é feita?"):
-            st.write(f"É o preço máximo a se pagar pelo DDGS com base na proteína. \nConta: Preço Soja (R${preco_soja}) x [Proteína DDGS ({pb_ddgs}%) / Proteína Soja ({pb_soja}%)].")
-
-        # 4. Relação de Preço e Regra de Ouro
-        viabilidade = preco_ddgs / preco_soja
-        status_viabilidade = "🟢 Favorável" if viabilidade < 0.75 else ("🟡 Atenção" if viabilidade < 0.82 else "🔴 Desfavorável")
-        col4.metric("Relação (DDGS/Soja)", f"{viabilidade*100:.1f}%", status_viabilidade)
-        with col4.expander("ℹ️ Regra de Ouro"):
-            st.write("Se o preço do DDGS for até 75%-80% do preço da Soja, ele é financeiramente vantajoso na dieta.")
+        cols_econ = st.columns(len(selected_comms))
+        for i, comm in enumerate(selected_comms):
+            val_nutri = get_nutrient(df_raw, comm, econ_param)
+            custo, math_str = calc_cost_per_nutrient(prices[comm], val_nutri, econ_unit)
+            
+            with cols_econ[i]:
+                if pd.isna(custo):
+                    st.metric(f"Custo/{econ_unit} ({comm})", "N/D")
+                else:
+                    st.metric(f"Custo/{econ_unit} ({comm})", f"R$ {custo:.4f}")
+                with st.expander("ℹ️ Como é feito?"):
+                    if pd.isna(custo):
+                        st.write("Dado nutricional não disponível (N/D).")
+                    else:
+                        st.write(f"**Preço:** R$ {prices[comm]:.2f}/t")
+                        st.write(f"**Nutriente:** {val_nutri} {econ_unit}")
+                        st.write(f"**Em 1 tonelada:** {math_str}")
+                        st.write(f"**Cálculo:** R$ {prices[comm]:.2f} ÷ {math_str.split('=')[1].strip()} = R$ {custo:.4f}")
 
         st.markdown("---")
-        st.subheader("Comparativo Nutricional Direto")
+        st.subheader("3. Preço Limite / Teto (Regra de Substituição)")
+        st.info("O sistema calcula automaticamente o Preço Limite quando há 2 ou mais commodities. Ele responde: 'Com base no ingrediente A, qual o valor máximo a pagar no ingrediente B?'")
         
-        col_bar1, col_bar2 = st.columns(2)
+        if len(selected_comms) >= 2:
+            col_ref, col_eval, col_crit, col_btn = st.columns([2, 2, 2, 1])
+            
+            # Controle de inversão via session_state
+            if 'inv_ref' not in st.session_state: st.session_state.inv_ref = selected_comms[0]
+            if 'inv_eval' not in st.session_state: st.session_state.inv_eval = selected_comms[1]
+            
+            # Garantir que os itens no session_state ainda estão selecionados
+            if st.session_state.inv_ref not in selected_comms: st.session_state.inv_ref = selected_comms[0]
+            if st.session_state.inv_eval not in selected_comms: st.session_state.inv_eval = selected_comms[1]
+
+            ref_comm = col_ref.selectbox("Commodity de Referência (Base):", selected_comms, index=selected_comms.index(st.session_state.inv_ref))
+            eval_comm = col_eval.selectbox("Commodity a ser Avaliada:", selected_comms, index=selected_comms.index(st.session_state.inv_eval))
+            crit_param = col_crit.selectbox("Critério de Comparação:", all_parameters)
+            
+            with col_btn:
+                st.write("") # spacing
+                st.write("")
+                if st.button("🔄 Inverter"):
+                    st.session_state.inv_ref, st.session_state.inv_eval = eval_comm, ref_comm
+                    st.rerun()
+
+            val_ref = get_nutrient(df_raw, ref_comm, crit_param)
+            val_eval = get_nutrient(df_raw, eval_comm, crit_param)
+            
+            if pd.isna(val_ref) or pd.isna(val_eval) or val_ref == 0:
+                st.error("Não é possível calcular o preço limite pois faltam dados nutricionais (N/D) para este parâmetro.")
+            else:
+                limite = prices[ref_comm] * (val_eval / val_ref)
+                diferenca = limite - prices[eval_comm]
+                
+                col_res1, col_res2 = st.columns(2)
+                status = f"🟢 Vantajoso comprar (Margem: R$ {diferenca:.2f}/t)" if prices[eval_comm] <= limite else f"🔴 Inviável (Ultrapassou R$ {abs(diferenca):.2f}/t)"
+                col_res1.metric(f"Preço Limite ({eval_comm})", f"R$ {limite:.2f}", status, delta_color="normal" if prices[eval_comm] <= limite else "inverse")
+                
+                with col_res2.expander("ℹ️ Auditoria da Conta do Preço Limite"):
+                    st.write(f"**Referência:** {ref_comm} (Preço: R$ {prices[ref_comm]} | Nutriente: {val_ref})")
+                    st.write(f"**Avaliado:** {eval_comm} (Preço: R$ {prices[eval_comm]} | Nutriente: {val_eval})")
+                    st.write(f"**Fórmula:** Preço Ref × (Nutriente Avaliado ÷ Nutriente Ref)")
+                    st.write(f"**Cálculo:** {prices[ref_comm]} × ({val_eval} ÷ {val_ref}) = **R$ {limite:.2f}**")
+
+        st.markdown("---")
+        st.subheader("4. Comparativo Nutricional Dinâmico")
+        selected_params = st.multiselect("Selecione os parâmetros que deseja visualizar:", all_parameters, default=['Proteína Bruta (PB)', 'Energia Metabolizável - Aves', 'FDN'])
         
-        with col_bar1:
-            st.markdown("**Proteína Bruta (PB) (%)**")
-            st.markdown(render_bar(pb_soja, pb_ddgs, 60), unsafe_allow_html=True)
+        # Grid layout para os gráficos de barra
+        cols_graf = st.columns(2)
+        for i, param in enumerate(selected_params):
+            unit = get_unit(df_raw, param)
+            vals = {c: get_nutrient(df_raw, c, param) for c in selected_comms}
+            max_val = max([v for v in vals.values() if not pd.isna(v)], default=0)
+            # Para não estourar a barra visual, adiciona 20% de margem no eixo max
+            max_axis = max_val * 1.2 if max_val > 0 else 100 
             
-            st.markdown("**PNDR (Proteína Bypass) (%)**")
-            st.markdown(render_bar(pndr_soja, pndr_ddgs, 100), unsafe_allow_html=True)
-            
-            st.markdown("**PDR (Proteína Degradável) (%)**")
-            st.markdown(render_bar(pdr_soja, pdr_ddgs, 100), unsafe_allow_html=True)
-            
-            st.markdown("**Fósforo Total (P) (%)**")
-            st.markdown(render_bar(p_soja, p_ddgs, 1.2), unsafe_allow_html=True)
-            
-            st.markdown("**Cálcio (Ca) (%)**")
-            st.markdown(render_bar(ca_soja, ca_ddgs, 0.5), unsafe_allow_html=True)
+            with cols_graf[i % 2]:
+                st.markdown(f"**{param} ({unit})**")
+                st.markdown(render_dynamic_bar(vals, max_axis, unit), unsafe_allow_html=True)
 
-        with col_bar2:
-            st.markdown("**NDT (Energia Total) (%)**")
-            st.markdown(render_bar(ndt_soja, ndt_ddgs, 100), unsafe_allow_html=True)
-            
-            st.markdown(f"**Energia Metabolizável ({especie}) (Mcal)**")
-            st.markdown(render_bar(energia_soja, energia_ddgs, 4.0), unsafe_allow_html=True)
-            
-            st.markdown("**Extrato Etéreo (Energia/Óleo) (%)**")
-            st.markdown(render_bar(ee_soja, ee_ddgs, 15), unsafe_allow_html=True)
-            
-            st.markdown("**FDN (Fibra Digestível) (%)**")
-            st.markdown(render_bar(fdn_soja, fdn_ddgs, 50), unsafe_allow_html=True)
-            
-            st.markdown("**FB (Fibra Bruta) (%)**")
-            st.markdown(render_bar(fb_soja, fb_ddgs, 20), unsafe_allow_html=True)
-            
-            st.markdown("**Matéria Seca (%)**")
-            st.markdown(render_bar(ms_soja, ms_ddgs, 100), unsafe_allow_html=True)
-
-        # Bloco INTELIGENTE de leitura de Aminoácidos
-        if not df_amino.empty:
-            st.markdown("---")
-            st.subheader("Perfil de Aminoácidos")
-            
-            def get_amino(palavra_chave):
-                try:
-                    # Pega as colunas pela posição, ignorando se o nome foi digitado diferente na planilha
-                    col_param = df_amino.columns[0]
-                    col_soja_am = df_amino.columns[1]
-                    col_ddgs_am = df_amino.columns[2]
-                    
-                    v_soja = clean_number(df_amino.loc[df_amino[col_param].str.contains(palavra_chave, case=False, na=False), col_soja_am].values[0])
-                    v_ddgs = clean_number(df_amino.loc[df_amino[col_param].str.contains(palavra_chave, case=False, na=False), col_ddgs_am].values[0])
-                    return v_soja, v_ddgs
-                except:
-                    return 0.0, 0.0
-            
-            lisina_soja, lisina_ddgs = get_amino('Lisina')
-            metionina_soja, metionina_ddgs = get_amino('Metionina')
-            
-            col_amino1, col_amino2 = st.columns(2)
-            with col_amino1:
-                st.markdown("**Lisina (% na MS)**")
-                st.markdown(render_bar(lisina_soja, lisina_ddgs, 4.0), unsafe_allow_html=True)
-            with col_amino2:
-                st.markdown("**Metionina (% na MS)**")
-                st.markdown(render_bar(metionina_soja, metionina_ddgs, 1.0), unsafe_allow_html=True)
-
-    # --- ABA 2: SIMULADOR DE BLENDING ---
-    with tab2:
-        st.subheader(f"Simulador de Mistura para {especie}")
+# ==========================================
+# ABA 2: SIMULADOR DE SUBSTITUIÇÃO
+# ==========================================
+with tab2:
+    st.subheader("Simulador de Formulação e Substituição")
+    
+    # Inicializar estado do simulador
+    if 'form_orig' not in st.session_state:
+        st.session_state.form_orig = {c: 0.0 for c in all_commodities}
+        st.session_state.form_orig['Milho'] = 60.0
+        st.session_state.form_orig['Farelo de Soja'] = 30.0
+        st.session_state.form_orig['DDGS'] = 10.0
         
-        perc_ddgs = st.slider("Porcentagem de DDGS na mistura (O restante será Farelo de Soja)", 0, 100, 30, step=5)
-        perc_soja = 100 - perc_ddgs
-        
-        pb_mistura = (pb_soja * (perc_soja/100)) + (pb_ddgs * (perc_ddgs/100))
-        energia_mistura = (energia_soja * (perc_soja/100)) + (energia_ddgs * (perc_ddgs/100))
-        preco_mistura = (preco_soja * (perc_soja/100)) + (preco_ddgs * (perc_ddgs/100))
-        economia_ton = preco_soja - preco_mistura
-        
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        col_m1.metric("Proteína Bruta (Mistura)", f"{pb_mistura:.1f}%")
-        col_m2.metric(f"Energia ({especie})", f"{energia_mistura:.2f} Mcal")
-        col_m3.metric("Custo (R$/ton)", f"R$ {preco_mistura:.2f}")
-        col_m4.metric("Economia vs 100% Soja", f"R$ {economia_ton:.2f} / ton")
-        
-        with col_m4.expander("ℹ️ Entenda a economia"):
-            st.write(f"Se você formulasse 1 tonelada usando APENAS Soja, custaria R$ {preco_soja:.2f}. Usando {perc_ddgs}% de DDGS, essa mesma tonelada de ingrediente custará R$ {preco_mistura:.2f}. Você economiza R$ {economia_ton:.2f} a cada tonelada misturada.")
+    if 'form_new' not in st.session_state:
+        st.session_state.form_new = st.session_state.form_orig.copy()
 
-        if 'historico' not in st.session_state:
-            st.session_state.historico = []
-
-        if st.button("💾 Salvar Simulação no Histórico"):
-            st.session_state.historico.append({
-                "Mistura": f"{perc_soja}% Soja / {perc_ddgs}% DDGS",
-                "Espécie": especie,
-                "PB (%)": round(pb_mistura, 1),
-                "Custo (R$/t)": round(preco_mistura, 2),
-                "Economia vs Soja (R$/t)": round(economia_ton, 2)
-            })
-            st.success("Simulação salva!")
-
-        if st.session_state.historico:
-            st.markdown("### 📋 Histórico")
-            st.dataframe(pd.DataFrame(st.session_state.historico), use_container_width=True)
-            if st.button("Limpar Histórico"):
-                st.session_state.historico = []
+    col_orig, col_subst, col_new = st.columns([1, 1, 1])
+    
+    # 1. Formulação Original
+    with col_orig:
+        st.markdown("### 📋 Formulação Original (%)")
+        soma_orig = 0
+        for comm in all_commodities:
+            st.session_state.form_orig[comm] = st.number_input(f"{comm} (Orig)", min_value=0.0, max_value=100.0, value=float(st.session_state.form_orig.get(comm, 0.0)), step=1.0)
+            soma_orig += st.session_state.form_orig[comm]
+            
+        if abs(soma_orig - 100.0) > 0.01:
+            st.error(f"Soma: {soma_orig:.1f}%. A formulação original deve somar 100%.")
+        else:
+            st.success("Soma: 100% OK")
+            if st.button("Copiar Original para Reestruturada"):
+                st.session_state.form_new = st.session_state.form_orig.copy()
                 st.rerun()
 
-    # --- ABA 3: DADOS BRUTOS ---
-    with tab3:
-        st.subheader("Base de Dados Bruta (Google Sheets)")
-        st.markdown("**Comparativo Geral**")
-        st.dataframe(df_raw, use_container_width=True)
+    # 2. Conexão / Substituição Visual
+    with col_subst:
+        st.markdown("### 🔄 Motor de Substituição")
+        st.info("Defina qual ingrediente vai aumentar, e quem vai ceder espaço na mesma proporção física.")
         
-        if not df_amino.empty:
-            st.markdown("**Aminoácidos e Minerais**")
-            st.dataframe(df_amino, use_container_width=True)
+        inc_comm = st.selectbox("Ingrediente a AUMENTAR (+):", all_commodities)
+        dec_comm = st.selectbox("Ingrediente a REDUZIR (-):", all_commodities, index=1)
+        qtd_subst = st.number_input("Quantidade a transferir (%):", min_value=0.0, value=5.0, step=1.0)
+        
+        st.markdown(f"<div style='text-align:center; padding: 10px; background-color:#1e293b; border-radius:10px; margin-bottom: 10px;'>"
+                    f"<b>{inc_comm}</b> (+{qtd_subst}%)<br> ⬆ <br> ⬇ <br><b>{dec_comm}</b> (-{qtd_subst}%)"
+                    f"</div>", unsafe_allow_html=True)
+                    
+        if st.button("Aplicar Substituição na Reestruturada"):
+            if st.session_state.form_new[dec_comm] >= qtd_subst:
+                st.session_state.form_new[inc_comm] += qtd_subst
+                st.session_state.form_new[dec_comm] -= qtd_subst
+                st.success("Substituição aplicada!")
+            else:
+                st.error(f"Erro: O ingrediente {dec_comm} não possui {qtd_subst}% disponível para reduzir.")
 
-except Exception as e:
-    st.error(f"Erro ao carregar os dados. Detalhes: {e}")
+    # 3. Formulação Reestruturada
+    with col_new:
+        st.markdown("### 🛠️ Formulação Reestruturada (%)")
+        soma_new = 0
+        for comm in all_commodities:
+            st.session_state.form_new[comm] = st.number_input(f"{comm} (Nova)", min_value=0.0, max_value=100.0, value=float(st.session_state.form_new.get(comm, 0.0)), step=1.0)
+            soma_new += st.session_state.form_new[comm]
+            
+        if abs(soma_new - 100.0) > 0.01:
+            st.error(f"Soma: {soma_new:.1f}%. A formulação reestruturada deve somar 100%.")
+        else:
+            st.success("Soma: 100% OK")
+
+    st.markdown("---")
+    # Cálculos da Dieta
+    if abs(soma_orig - 100.0) <= 0.01 and abs(soma_new - 100.0) <= 0.01:
+        st.subheader("COMPARAÇÃO — ORIGINAL × REESTRUTURADA")
+        
+        # Função para calcular nutrientes da dieta
+        def calc_dieta(form_dict, prices_dict, df):
+            custo_ton = sum((form_dict[c]/100) * prices_dict[c] for c in all_commodities)
+            nutri = {}
+            for param in all_parameters:
+                total_param = 0
+                valido = True
+                for c in all_commodities:
+                    perc = form_dict[c] / 100
+                    if perc > 0:
+                        v = get_nutrient(df, c, param)
+                        if pd.isna(v): 
+                            valido = False # Se um ingrediente ativo não tem o dado, a dieta não pode calcular
+                        else:
+                            total_param += v * perc
+                nutri[param] = total_param if valido else np.nan
+            return custo_ton, nutri
+
+        custo_orig, nutri_orig = calc_dieta(st.session_state.form_orig, prices, df_raw)
+        custo_new, nutri_new = calc_dieta(st.session_state.form_new, prices, df_raw)
+        
+        # Impacto Econômico
+        dif_custo = custo_new - custo_orig
+        col_res1, col_res2, col_res3 = st.columns(3)
+        col_res1.metric("Custo Original (R$/t)", f"R$ {custo_orig:.2f}")
+        col_res2.metric("Custo Reestruturado (R$/t)", f"R$ {custo_new:.2f}")
+        
+        status_eco = f"🟢 Barateou R$ {abs(dif_custo):.2f}/t" if dif_custo < 0 else (f"🔴 Encareceu R$ {abs(dif_custo):.2f}/t" if dif_custo > 0 else "⚪ Sem alteração")
+        col_res3.metric("Impacto Econômico", f"R$ {dif_custo:.2f}", status_eco, delta_color="inverse")
+        
+        with st.expander("ℹ️ Como o custo da dieta é calculado?"):
+            st.write("Soma-se a (Porcentagem de inclusão ÷ 100) multiplicada pelo Preço da Tonelada de cada ingrediente.")
+            calc_str = " + ".join([f"({st.session_state.form_new[c]}% × R${prices[c]})" for c in all_commodities if st.session_state.form_new[c] > 0])
+            st.write(f"**Conta (Nova):** {calc_str} = R$ {custo_new:.2f}")
+
+        # Impacto Nutricional
+        st.markdown("#### Impacto Nutricional")
+        nutri_table = []
+        for param in all_parameters:
+            v_o = nutri_orig[param]
+            v_n = nutri_new[param]
+            unit = get_unit(df_raw, param)
+            
+            if pd.isna(v_o) or pd.isna(v_n):
+                dif_str = "N/D"
+            else:
+                dif = v_n - v_o
+                dif_str = f"+{dif:.2f}" if dif > 0 else f"{dif:.2f}"
+                
+            nutri_table.append({
+                "Parâmetro": f"{param} ({unit})",
+                "Original": f"{v_o:.2f}" if not pd.isna(v_o) else "N/D",
+                "Reestruturada": f"{v_n:.2f}" if not pd.isna(v_n) else "N/D",
+                "Diferença": dif_str
+            })
+            
+        st.dataframe(pd.DataFrame(nutri_table), use_container_width=True)
+
+# ==========================================
+# ABA 3: BASE DE DADOS
+# ==========================================
+with tab3:
+    st.subheader("Base de Dados Nutricional")
+    st.markdown("Os dados abaixo alimentam todos os cálculos da aplicação. Valores vazios representam falta de dados de literatura (N/D).")
+    st.dataframe(df_raw, use_container_width=True)
+    
+    st.info("💡 **Auditoria e Transparência**: Esta matriz pode ser alimentada por um Google Sheets no formato: `Coluna A = Parâmetro`, `Coluna B = Unidade`, `Demais Colunas = Commodities`.")
